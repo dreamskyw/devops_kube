@@ -1,0 +1,422 @@
+<template>
+  <div class="login tab-box">
+    <div class="container-fluid">
+      <div class="row">
+        <div class="col-lg-7 col-md-12 col-pad-0 form-section">
+          <div class="login-inner-form" v-show="!showForgotPassword && !showSignUp">
+            <div class="details">
+              <header>
+                <a href="#"><img src="@assets/icons/logo/default-logo.png" alt="logo"></a>
+              </header>
+              <section>
+                <el-form :model="loginForm" status-icon :rules="rules" ref="loginForm" hide-required-asterisk>
+                  <el-form-item label="用户名" prop="account">
+                    <el-input v-model="loginForm.account" placeholder="请输入用户名" autocomplete="off"></el-input>
+                  </el-form-item>
+                  <el-form-item label="密码" prop="password">
+                    <el-input
+                      type="password"
+                      @keyup.enter.native="login"
+                      v-model="loginForm.password"
+                      autocomplete="off"
+                      placeholder="请输入密码"
+                      show-password
+                    ></el-input>
+                  </el-form-item>
+                </el-form>
+                <el-button type="submit" @click="login" v-loading="loading" class="btn-md btn-theme btn-block login-btn">登录</el-button>
+              </section>
+              <div class="bottom">
+                <a @click="showForgotPassword = true">找回密码</a>
+                <span v-if="showRegistration" class="divide">|</span>
+                <a v-if="showRegistration" @click="showSignUp = true">注册</a>
+              </div>
+            </div>
+          </div>
+          <div class="login-inner-form" v-show="showForgotPassword">
+            <ForgetPassword :openLogin="checkLogin" :retrieveToken="retrieveToken" />
+          </div>
+          <div class="login-inner-form" v-show="showSignUp">
+            <SignUp :openLogin="afterSignUp" />
+          </div>
+        </div>
+        <div class="col-lg-5 col-md-12 col-pad-0 bg-img none-992">
+          <div class="information">
+            <h3>{{showCopywriting.title}}</h3>
+            <p>{{showCopywriting.content}}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <div class="copyright">
+        devops 平台 kubernetes ©{{moment().format('YYYY')}}
+        <el-tooltip>
+          <div slot="content">
+            <span v-if="processEnv.VERSION">Version: {{processEnv.VERSION}}</span>
+            <br />
+            <span v-if="processEnv.BUILD_TIME">Build Time: {{moment.unix(processEnv.BUILD_TIME).format('YYYYMMDDHHmm')}}</span>
+            <br />
+            <span v-if="processEnv.TAG">Tag: {{processEnv.TAG}}</span>
+          </div>
+          <span v-if="processEnv && processEnv.BUILD_TIME" class="el-icon-info"></span>
+        </el-tooltip>
+      </div>
+    </footer>
+  </div>
+</template>
+<script>
+import moment from 'moment'
+import { isMobile } from 'mobile-device-detect'
+import { checkConnectorsAPI, checkRegistrationAPI } from '@api'
+import ForgetPassword from './components/forgetPassword.vue'
+import SignUp from './components/signUp.vue'
+import store from 'storejs'
+
+export default {
+  components: {
+    ForgetPassword,
+    SignUp
+  },
+  data () {
+    return {
+      showForgotPassword: false,
+      showSignUp: false,
+      showConnectors: false,
+      showRegistration: false,
+      retrieveToken: '',
+      loading: false,
+      loginForm: {
+        account: '',
+        password: ''
+      },
+      rules: {
+        account: [
+          { required: true, message: '请输入用户名', trigger: 'change' }
+        ],
+        password: [{ required: true, message: '请输入密码', trigger: 'change' }]
+      },
+      moment,
+      copywriting: {
+        common: {
+          title: '高效研发从现在开始',
+          content:
+            '集群管理，CI/CD， 多环境能支持，本地联调、微服务并行构建、集成测试和持续部署。'
+        }
+      }
+    }
+  },
+  methods: {
+    login () {
+      this.$refs.loginForm.validate(async valid => {
+        if (valid) {
+          this.loading = true
+          const payload = this.loginForm
+          const res = await this.$store.dispatch('LOGIN', payload)
+          if (res) {
+            this.loading = false
+            this.redirectByDevice()
+          } else {
+            this.loading = false
+          }
+        } else {
+          return false
+        }
+      })
+    },
+    async checkLogin () {
+      const userInfo = store.get('userInfo')
+      if (userInfo) {
+        this.redirectByDevice()
+      } else {
+        const connectorsCheck = await checkConnectorsAPI()
+        if (connectorsCheck && connectorsCheck.enabled) {
+          window.location.href = '/api/v1/login'
+        }
+      }
+    },
+    async afterSignUp () {
+      this.showSignUp = false
+      const connectorsCheck = await checkConnectorsAPI()
+      if (connectorsCheck && connectorsCheck.enabled) {
+        window.location.href = '/api/v1/login'
+      }
+    },
+    redirectByDevice () {
+      if (isMobile) {
+        this.$router.push('/mobile')
+      } else {
+        if (
+          typeof this.$route.query.redirect !== 'undefined' &&
+          this.$route.query.redirect !== '/'
+        ) {
+          this.$router.push(this.$route.query.redirect)
+        } else {
+          this.$router.push('/v1/projects')
+        }
+      }
+    }
+  },
+  computed: {
+    processEnv () {
+      return process.env
+    },
+    showCopywriting () {
+      return this.copywriting.common
+    }
+  },
+  async mounted () {
+    const token = this.$route.query.token
+    // 邮箱通过 Token 设置新密码接收参数
+    const retrieveToken = this.$route.query.idtoken
+    // Dex 找回密码接收参数
+    const findPassword = this.$route.query.findPassword
+    // Dex 注册接收参数
+    const signUp = this.$route.query.signUp
+    // 注册检测
+    const registrationCheck = await checkRegistrationAPI()
+    if (registrationCheck && registrationCheck.enabled) {
+      this.showRegistration = true
+    } else {
+      this.showRegistration = false
+    }
+    if (retrieveToken) {
+      this.retrieveToken = retrieveToken
+      this.showForgotPassword = true
+    } else if (findPassword) {
+      this.showForgotPassword = true
+    } else if (signUp) {
+      this.showSignUp = true
+    } else if (token) {
+      const res = await this.$store
+        .dispatch('OTHERLOGIN', token)
+        .catch(error => console.log(error))
+      if (res) {
+        this.redirectByDevice()
+      }
+    } else {
+      this.checkLogin()
+    }
+  }
+}
+</script>
+<style lang="less" scoped>
+@import url('~@assets/css/quote/bootstarp.less');
+
+.bottom {
+  display: flex;
+  align-items: center;
+  float: right;
+  padding: 0 10px;
+
+  .divide {
+    color: #ced4da;
+  }
+
+  a {
+    padding-right: 10px;
+    padding-left: 10px;
+    color: #717171;
+    font-size: 14px;
+    cursor: pointer !important;
+
+    &:hover {
+      color: #007bff !important;
+      text-decoration-line: none;
+    }
+  }
+}
+
+.login {
+  .information {
+    margin: 0 20px 0 70px;
+    color: #fff;
+
+    h3 {
+      margin-bottom: 20px;
+      color: #fff;
+      font-size: 25px;
+    }
+
+    p {
+      margin-bottom: 20px;
+      color: #fff;
+      line-height: 28px;
+    }
+  }
+
+  .form-section {
+    position: relative;
+    display: -webkit-box;
+    display: -moz-box;
+    display: -ms-flexbox;
+    display: -webkit-flex;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 30px;
+    text-align: center;
+
+    .login-inner-form {
+      width: 100%;
+      max-width: 350px;
+      color: #717171;
+      text-align: center;
+
+      .details {
+        font-size: 15px;
+
+        p {
+          margin: 0;
+          color: #717171;
+          font-size: 14px;
+
+          a {
+            color: #717171;
+            font-weight: 500;
+          }
+        }
+
+        img {
+          height: 60px;
+        }
+
+        h3 {
+          margin: 0 0 25px;
+          color: #717171;
+          font-weight: 400;
+          font-size: 14px;
+        }
+
+        .btn-md {
+          padding: 12px 30px 11px 30px;
+          font-weight: 600;
+          font-size: 14px;
+          letter-spacing: 1px;
+          border-radius: 50px;
+          cursor: pointer;
+        }
+
+        /deep/ .el-form-item {
+          margin-bottom: 18px;
+        }
+
+        /deep/ .el-input {
+          .el-input__inner {
+            border-radius: 0.25rem;
+          }
+        }
+
+        /deep/ .el-form-item__label {
+          color: #717171;
+        }
+
+        input[type='checkbox'],
+        input[type='radio'] {
+          margin-top: 4px;
+        }
+
+        input[type='checkbox']:checked + label::before {
+          color: #f3f3f3;
+          font-weight: 300;
+          font-size: 14px;
+          line-height: 15px;
+          content: '\2713';
+        }
+
+        button:focus {
+          outline: none;
+          outline: 0 auto -webkit-focus-ring-color;
+        }
+
+        .btn-theme {
+          color: #fff;
+          background: #007bff;
+          border: none;
+          border-radius: 0.25rem;
+        }
+
+        .btn-theme.focus,
+        .btn-theme:focus {
+          box-shadow: none;
+        }
+
+        .btn-theme:hover {
+          background: #2c5ce4;
+        }
+
+        .name {
+          display: inline-block;
+          margin-bottom: 5px;
+          font-weight: 500;
+          font-size: 35px;
+          background: linear-gradient(25deg, #ff6302 0%, #ff2968 100%);
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+
+        .login-btn {
+          margin-bottom: 8px;
+        }
+
+        .login-loading {
+          width: 30px;
+          margin: 0 auto;
+          margin-top: 12px;
+          font-size: 30px;
+          visibility: hidden;
+
+          &.show {
+            visibility: unset;
+          }
+        }
+      }
+    }
+  }
+
+  .bg-img {
+    position: relative;
+    top: 0;
+    bottom: 0;
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 100vh;
+    padding: 30px 30px;
+    text-align: left;
+    background:
+      rgba(0, 0, 0, 0.04) url('~@assets/background/login.jpg') top
+      left repeat;
+    background-size: cover;
+    border-radius: 100% 0 0 100%;
+    opacity: 1;
+  }
+
+  footer {
+    display: flex;
+    justify-content: center;
+
+    .copyright {
+      position: absolute;
+      bottom: 0;
+      margin-bottom: 30px;
+      color: #8f9bb2;
+      font-size: 14px;
+    }
+  }
+}
+
+@media (max-width: 992px) {
+  .login .none-992 {
+    display: none;
+  }
+
+  .login .form-section {
+    padding: 30px 15px;
+  }
+}
+</style>
